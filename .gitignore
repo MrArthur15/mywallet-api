@@ -1,0 +1,16 @@
+# Dependências
+node_modules/
+
+# Build / Output
+dist/
+build/
+
+# Variáveis de Ambiente (NUNCA suba o .env real)
+.env
+.env.production
+.env.test
+
+# Logs e Banco local (se houver SQLite ou dumps)
+*.log
+*.sqlite
+*.db
