@@ -240,4 +240,89 @@ export async function summaryRoutes(app: FastifyInstance) {
       goals: goalsReport,
     });
   });
+  // ===========================================================================
+  // Rota GET /summary/export: Exportação de Extrato Mensal em CSV ou JSON
+  // ===========================================================================
+  app.get('/summary/export', async (request, reply) => {
+    const userId = (request.user as { sub: string }).sub;
+
+    const exportSchema = z.object({
+      month: z.coerce.number().min(1).max(12).default(() => new Date().getUTCMonth() + 1),
+      year: z.coerce.number().min(2000).max(2100).default(() => new Date().getUTCFullYear()),
+      format: z.enum(['csv', 'json']).default('csv'),
+    });
+
+    const { month, year, format } = exportSchema.parse(request.query);
+
+    const startOfMonth = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
+    const endOfMonth = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+
+    // Busca transações completas do período com suas relações
+    const transactions = await prisma.transaction.findMany({
+      where: {
+        userId,
+        date: { gte: startOfMonth, lte: endOfMonth },
+      },
+      include: {
+        category: { select: { name: true } },
+        account: { select: { name: true } },
+        invoice: {
+          include: {
+            creditCard: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: { date: 'asc' },
+    });
+
+    // Se o usuário pedir formato JSON, devolve o array estruturado
+    if (format === 'json') {
+      reply.header(
+        'Content-Disposition',
+        `attachment; filename="extrato-mywallet-${year}-${month.toString().padStart(2, '0')}.json"`
+      );
+      return reply.status(200).send(transactions);
+    }
+
+    // Gerador dinâmico de CSV otimizado com cabeçalhos para planilhas
+    const csvHeaders = [
+      'Data',
+      'Titulo',
+      'Tipo',
+      'Valor (R$)',
+      'Categoria',
+      'Origem',
+      'Status Pagamento',
+    ];
+
+    const csvRows = transactions.map((t) => {
+      const dataFormatada = new Date(t.date).toISOString().split('T')[0];
+      const origem = t.account?.name || t.invoice?.creditCard?.name || 'Não Identificada';
+      const status = t.isPaid ? 'Pago' : 'Pendente';
+      const valor = Number(t.amount).toFixed(2).replace('.', ',');
+
+      // Escapa aspas para evitar quebra de CSV caso o título tenha vírgulas
+      return [
+        dataFormatada,
+        `"${t.title.replace(/"/g, '""')}"`,
+        t.type === 'INCOME' ? 'Receita' : 'Despesa',
+        `"${valor}"`,
+        `"${t.category?.name || 'Sem Categoria'}"`,
+        `"${origem}"`,
+        status,
+      ].join(';');
+    });
+
+    const csvContent = [csvHeaders.join(';'), ...csvRows].join('\n');
+
+    // Headers HTTP que informam ao cliente para fazer download do arquivo CSV
+    reply.header('Content-Type', 'text/csv; charset=utf-8');
+    reply.header(
+      'Content-Disposition',
+      `attachment; filename="extrato-mywallet-${year}-${month.toString().padStart(2, '0')}.csv"`
+    );
+
+    // BOM (Byte Order Mark) para garantir que o Excel reconheça acentos UTF-8
+    return reply.status(200).send('\uFEFF' + csvContent);
+  });
 }

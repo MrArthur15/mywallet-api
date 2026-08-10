@@ -14,3 +14,9 @@ build/
 *.log
 *.sqlite
 *.db
+
+# Configurações de IDE e Assistentes de IA (Ambiente Local)
+.vscode/
+.claude/
+.windsurf/
+.agents/

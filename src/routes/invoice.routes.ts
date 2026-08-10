@@ -152,4 +152,104 @@ export async function invoiceRoutes(app: FastifyInstance) {
 
     return reply.status(200).send(updatedInvoice);
   });
+  // ===========================================================================
+  // Rota POST: Antecipar Parcelas Futuras para uma Fatura Aberta
+  // ===========================================================================
+  app.post('/invoices/:id/anticipate', async (request, reply) => {
+    const userId = (request.user as { sub: string }).sub;
+
+    const paramsSchema = z.object({
+      id: z.string().uuid({ message: 'ID da fatura de destino inválido' }),
+    });
+
+    const bodySchema = z.object({
+      installmentGroup: z.string().uuid({ message: 'ID do grupo de parcelamento é obrigatório' }),
+      quantity: z.number().int().positive().optional(), // Se não informar, antecipa TODAS as restantes
+    });
+
+    const { id: targetInvoiceId } = paramsSchema.parse(request.params);
+    const { installmentGroup, quantity } = bodySchema.parse(request.body);
+
+    // 1. Verifica se a fatura de destino existe, pertence ao usuário e está ABERTA
+    const targetInvoice = await prisma.invoice.findFirst({
+      where: {
+        id: targetInvoiceId,
+        status: 'OPEN',
+        creditCard: { userId },
+      },
+    });
+
+    if (!targetInvoice) {
+      return reply.status(404).send({
+        error: 'Fatura de destino não encontrada ou já está fechada/paga.',
+      });
+    }
+
+    // 2. Busca todas as parcelas futuras desse grupo (a partir de faturas posteriores à atual)
+    const futureInstallments = await prisma.transaction.findMany({
+      where: {
+        userId,
+        installmentGroup,
+        invoice: {
+          OR: [
+            { year: { gt: targetInvoice.year } },
+            { year: targetInvoice.year, month: { gt: targetInvoice.month } },
+          ],
+        },
+      },
+      orderBy: { date: 'asc' },
+    });
+
+    if (futureInstallments.length === 0) {
+      return reply.status(400).send({
+        error: 'Não há parcelas futuras disponíveis para antecipação neste grupo.',
+      });
+    }
+
+    // Delimita quantas parcelas serão antecipadas (todas ou apenas a quantidade solicitada)
+    const installmentsToAnticipate = quantity
+      ? futureInstallments.slice(0, quantity)
+      : futureInstallments;
+
+    // 3. Transação ACID: Move as parcelas e ajusta os totais das faturas simultaneamente
+    const result = await prisma.$transaction(async (tx) => {
+      let totalAnticipatedAmount = 0;
+
+      for (const item of installmentsToAnticipate) {
+        const amount = Number(item.amount);
+        totalAnticipatedAmount += amount;
+
+        // Deduz da fatura futura de onde a parcela está saindo
+        if (item.invoiceId) {
+          await tx.invoice.update({
+            where: { id: item.invoiceId },
+            data: { totalAmount: { decrement: amount } },
+          });
+        }
+
+        // Move a parcela para a fatura atual e sinaliza no título
+        await tx.transaction.update({
+          where: { id: item.id },
+          data: {
+            invoiceId: targetInvoice.id,
+            title: `${item.title} [Antecipada]`,
+          },
+        });
+      }
+
+      // Incrementa o total da fatura atual com a soma das parcelas antecipadas
+      const updatedInvoice = await tx.invoice.update({
+        where: { id: targetInvoice.id },
+        data: { totalAmount: { increment: totalAnticipatedAmount } },
+      });
+
+      return {
+        targetInvoice: updatedInvoice,
+        anticipatedCount: installmentsToAnticipate.length,
+        totalAnticipatedAmount,
+      };
+    });
+
+    return reply.status(200).send(result);
+  });
 }

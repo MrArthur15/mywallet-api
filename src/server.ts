@@ -25,6 +25,11 @@ app.get('/ping', async () => {
   return { status: 'ok', message: 'MyWallet API v2 rodando 100%!' };
 });
 
+// Redireciona a URL raiz diretamente para a documentação Swagger
+app.get('/', async (request, reply) => {
+  return reply.redirect('/docs');
+});
+
 const start = async () => {
   try {
     await app.register(cors, { origin: true });
