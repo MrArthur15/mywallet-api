@@ -31,6 +31,7 @@ describe('Goals API - Metas Financeiras e Auditoria GoalDeposit', () => {
       },
     });
     userId = user.id;
+
     authToken = app.jwt.sign({ name: user.name, email: user.email }, { sub: userId });
 
     const bank = await prisma.bank.create({
@@ -38,7 +39,6 @@ describe('Goals API - Metas Financeiras e Auditoria GoalDeposit', () => {
     });
     bankId = bank.id;
 
-    // Cria conta bancária com saldo de R$ 2.000,00
     const acc = await prisma.account.create({
       data: {
         userId,
@@ -84,11 +84,9 @@ describe('Goals API - Metas Financeiras e Auditoria GoalDeposit', () => {
     expect(response.status).toBe(200);
     expect(Number(response.body.savedAmount)).toBe(500.00);
 
-    // 1. Valida se a conta bancária caiu para R$ 1.500,00
     const account = await prisma.account.findUnique({ where: { id: accountId } });
     expect(Number(account?.balance)).toBe(1500.00);
 
-    // 2. Valida se o registro de auditoria foi criado no banco
     const deposits = await prisma.goalDeposit.findMany({ where: { goalId } });
     expect(deposits.length).toBe(1);
     expect(Number(deposits[0].amount)).toBe(500.00);

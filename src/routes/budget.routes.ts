@@ -7,9 +7,6 @@ export async function budgetRoutes(app: FastifyInstance) {
     await request.jwtVerify();
   });
 
-  // ===========================================================================
-  // Rota POST: Cria ou atualiza o teto de gastos (limitAmount) para um mês/ano
-  // ===========================================================================
   app.post('/budgets', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
@@ -37,7 +34,7 @@ export async function budgetRoutes(app: FastifyInstance) {
     if (existingBudget) {
       const updated = await prisma.budget.update({
         where: { id: existingBudget.id },
-        data: { limitAmount }, // <-- Atualizado para limitAmount
+        data: { limitAmount },
       });
       return reply.status(200).send(updated);
     }
@@ -46,7 +43,7 @@ export async function budgetRoutes(app: FastifyInstance) {
       data: {
         userId,
         categoryId,
-        limitAmount, // <-- Atualizado para limitAmount
+        limitAmount,
         month,
         year,
       },
@@ -55,9 +52,6 @@ export async function budgetRoutes(app: FastifyInstance) {
     return reply.status(201).send(budget);
   });
 
-  // ===========================================================================
-  // Rota GET: Lista orçamentos do mês/ano calculando o gasto realizado em tempo real
-  // ===========================================================================
   app.get('/budgets', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
@@ -73,7 +67,7 @@ export async function budgetRoutes(app: FastifyInstance) {
       include: {
         category: true,
       },
-      orderBy: { limitAmount: 'desc' }, // <-- Atualizado para limitAmount
+      orderBy: { limitAmount: 'desc' },
     });
 
     const startOfMonth = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
@@ -97,7 +91,7 @@ export async function budgetRoutes(app: FastifyInstance) {
         });
 
         const spentAmount = Number(aggregate._sum.amount || 0);
-        const targetAmount = Number(budget.limitAmount); // <-- Atualizado para limitAmount
+        const targetAmount = Number(budget.limitAmount);
         const percentageUsed = targetAmount > 0
           ? Number(((spentAmount / targetAmount) * 100).toFixed(2))
           : 0;
@@ -114,9 +108,6 @@ export async function budgetRoutes(app: FastifyInstance) {
     return reply.status(200).send(budgetsWithProgress);
   });
 
-  // ===========================================================================
-  // Rota DELETE: Remove um orçamento mensal
-  // ===========================================================================
   app.delete('/budgets/:id', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
@@ -135,6 +126,7 @@ export async function budgetRoutes(app: FastifyInstance) {
     }
 
     await prisma.budget.delete({ where: { id } });
+
     return reply.status(204).send();
   });
 }

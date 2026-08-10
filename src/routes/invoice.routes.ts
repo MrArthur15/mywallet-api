@@ -2,17 +2,11 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 
-/**
- * Função auxiliar pura para calcular corretamente Fechamento e Vencimento
- * respeitando a virada de mês quando o Vencimento é menor/igual ao Fechamento.
- */
 export function calculateInvoiceDates(year: number, month: number, closingDay: number, dueDay: number) {
   const closingDate = new Date(Date.UTC(year, month - 1, closingDay));
-  
   let dueMonth = month;
   let dueYear = year;
 
-  // Se o dia de vencimento vem depois do fechamento no calendário (ex: fecha dia 24, vence dia 03 do mês seguinte)
   if (dueDay <= closingDay) {
     dueMonth += 1;
     if (dueMonth > 12) {
@@ -30,9 +24,6 @@ export async function invoiceRoutes(app: FastifyInstance) {
     await request.jwtVerify();
   });
 
-  // ===========================================================================
-  // Rota POST: Cria/Abre uma fatura para o mês/ano de um cartão de crédito
-  // ===========================================================================
   app.post('/invoices', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
@@ -52,7 +43,6 @@ export async function invoiceRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Cartão de crédito não encontrado.' });
     }
 
-    // Cálculo exato de datas usando a função auxiliar
     const { closingDate, dueDate } = calculateInvoiceDates(year, month, card.closingDay, card.dueDay);
 
     const invoice = await prisma.invoice.create({
@@ -63,16 +53,13 @@ export async function invoiceRoutes(app: FastifyInstance) {
         closingDate,
         dueDate,
         status: 'OPEN',
-        totalAmount: 0, // Inicializa zerada
+        totalAmount: 0,
       },
     });
 
     return reply.status(201).send(invoice);
   });
 
-  // ===========================================================================
-  // Rota GET: Lista todas as faturas de um cartão específico
-  // ===========================================================================
   app.get('/credit-cards/:creditCardId/invoices', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
@@ -103,9 +90,6 @@ export async function invoiceRoutes(app: FastifyInstance) {
     return reply.status(200).send(invoices);
   });
 
-  // ===========================================================================
-  // Rota POST: Pagar Fatura (Debita da Conta Bancária em transação ACID)
-  // ===========================================================================
   app.post('/invoices/:id/pay', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
@@ -152,9 +136,7 @@ export async function invoiceRoutes(app: FastifyInstance) {
 
     return reply.status(200).send(updatedInvoice);
   });
-  // ===========================================================================
-  // Rota POST: Antecipar Parcelas Futuras para uma Fatura Aberta
-  // ===========================================================================
+
   app.post('/invoices/:id/anticipate', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
@@ -164,13 +146,12 @@ export async function invoiceRoutes(app: FastifyInstance) {
 
     const bodySchema = z.object({
       installmentGroup: z.string().uuid({ message: 'ID do grupo de parcelamento é obrigatório' }),
-      quantity: z.number().int().positive().optional(), // Se não informar, antecipa TODAS as restantes
+      quantity: z.number().int().positive().optional(),
     });
 
     const { id: targetInvoiceId } = paramsSchema.parse(request.params);
     const { installmentGroup, quantity } = bodySchema.parse(request.body);
 
-    // 1. Verifica se a fatura de destino existe, pertence ao usuário e está ABERTA
     const targetInvoice = await prisma.invoice.findFirst({
       where: {
         id: targetInvoiceId,
@@ -185,7 +166,6 @@ export async function invoiceRoutes(app: FastifyInstance) {
       });
     }
 
-    // 2. Busca todas as parcelas futuras desse grupo (a partir de faturas posteriores à atual)
     const futureInstallments = await prisma.transaction.findMany({
       where: {
         userId,
@@ -206,12 +186,10 @@ export async function invoiceRoutes(app: FastifyInstance) {
       });
     }
 
-    // Delimita quantas parcelas serão antecipadas (todas ou apenas a quantidade solicitada)
     const installmentsToAnticipate = quantity
       ? futureInstallments.slice(0, quantity)
       : futureInstallments;
 
-    // 3. Transação ACID: Move as parcelas e ajusta os totais das faturas simultaneamente
     const result = await prisma.$transaction(async (tx) => {
       let totalAnticipatedAmount = 0;
 
@@ -219,7 +197,6 @@ export async function invoiceRoutes(app: FastifyInstance) {
         const amount = Number(item.amount);
         totalAnticipatedAmount += amount;
 
-        // Deduz da fatura futura de onde a parcela está saindo
         if (item.invoiceId) {
           await tx.invoice.update({
             where: { id: item.invoiceId },
@@ -227,7 +204,6 @@ export async function invoiceRoutes(app: FastifyInstance) {
           });
         }
 
-        // Move a parcela para a fatura atual e sinaliza no título
         await tx.transaction.update({
           where: { id: item.id },
           data: {
@@ -237,7 +213,6 @@ export async function invoiceRoutes(app: FastifyInstance) {
         });
       }
 
-      // Incrementa o total da fatura atual com a soma das parcelas antecipadas
       const updatedInvoice = await tx.invoice.update({
         where: { id: targetInvoice.id },
         data: { totalAmount: { increment: totalAnticipatedAmount } },

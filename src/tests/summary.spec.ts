@@ -26,6 +26,7 @@ describe('Summary Analytics API - Consolidado Financeiro', () => {
       },
     });
     userId = user.id;
+
     authToken = app.jwt.sign({ name: user.name, email: user.email }, { sub: userId });
   });
 

@@ -3,14 +3,10 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 
 export async function summaryRoutes(app: FastifyInstance) {
-  // Exige Token JWT válido em todas as rotas
   app.addHook('onRequest', async (request, reply) => {
     await request.jwtVerify();
   });
 
-  // ===========================================================================
-  // Rota GET /summary: Resumo simples do mês (Entradas, Saídas e Saldo)
-  // ===========================================================================
   app.get('/summary', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
@@ -67,9 +63,6 @@ export async function summaryRoutes(app: FastifyInstance) {
     });
   });
 
-  // ===========================================================================
-  // Rota GET /summary/analytics: Relatório Gerencial Completo e Dashboard
-  // ===========================================================================
   app.get('/summary/analytics', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
@@ -83,7 +76,6 @@ export async function summaryRoutes(app: FastifyInstance) {
     const startOfMonth = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
     const endOfMonth = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
 
-    // 1. Consultas paralelas para máxima performance no banco relacional
     const [
       incomeAgg,
       outcomeAgg,
@@ -94,27 +86,22 @@ export async function summaryRoutes(app: FastifyInstance) {
       groupedExpenses,
       budgets,
     ] = await Promise.all([
-      // Total Entradas no mês
       prisma.transaction.aggregate({
         where: { userId, type: 'INCOME', date: { gte: startOfMonth, lte: endOfMonth } },
         _sum: { amount: true },
       }),
-      // Total Saídas no mês
       prisma.transaction.aggregate({
         where: { userId, type: 'OUTCOME', date: { gte: startOfMonth, lte: endOfMonth } },
         _sum: { amount: true },
       }),
-      // Todas as contas bancárias (para patrimônio)
       prisma.account.findMany({
         where: { userId },
         select: { id: true, name: true, balance: true, type: true },
       }),
-      // Metas do usuário
       prisma.goal.findMany({
         where: { userId },
         select: { id: true, title: true, targetAmount: true, savedAmount: true },
       }),
-      // Faturas de cartão ABERTAS no sistema
       prisma.invoice.findMany({
         where: {
           creditCard: { userId },
@@ -122,12 +109,10 @@ export async function summaryRoutes(app: FastifyInstance) {
         },
         select: { totalAmount: true },
       }),
-      // Categorias para enriquecer o gráfico de gastos
       prisma.category.findMany({
         where: { userId },
         select: { id: true, name: true, color: true, icon: true },
       }),
-      // Gastos do mês agrupados por categoria (Prisma groupBy)
       prisma.transaction.groupBy({
         by: ['categoryId'],
         where: {
@@ -137,26 +122,24 @@ export async function summaryRoutes(app: FastifyInstance) {
         },
         _sum: { amount: true },
       }),
-      // Orçamentos cadastrados para este mês/ano
       prisma.budget.findMany({
         where: { userId, month, year },
         include: { category: true },
       }),
     ]);
 
-    // 2. Cálculos de Fluxo de Caixa
     const totalIncome = Number(incomeAgg._sum.amount || 0);
     const totalOutcome = Number(outcomeAgg._sum.amount || 0);
     const monthlyBalance = totalIncome - totalOutcome;
 
-    // 3. Cálculo de Patrimônio Líquido (Net Worth)
     const totalAccountsBalance = accounts.reduce((acc, c) => acc + Number(c.balance), 0);
     const totalGoalsSaved = goals.reduce((acc, g) => acc + Number(g.savedAmount), 0);
     const totalOpenInvoices = openInvoices.reduce((acc, i) => acc + Number(i.totalAmount), 0);
+    
     const netWorth = totalAccountsBalance + totalGoalsSaved - totalOpenInvoices;
 
-    // 4. Formatação de Gastos por Categoria (Gráfico de Pizza)
     const categoryMap = new Map(categories.map((c) => [c.id, c]));
+
     const expensesByCategory = groupedExpenses
       .map((item) => {
         const cat = categoryMap.get(item.categoryId);
@@ -174,9 +157,8 @@ export async function summaryRoutes(app: FastifyInstance) {
           percentage,
         };
       })
-      .sort((a, b) => b.amount - a.amount); // Ordena do maior gasto para o menor
+      .sort((a, b) => b.amount - a.amount);
 
-    // 5. Mapeia gastos rápidos por categoria para comparar com os Orçamentos
     const spentByCategoryMap = new Map(
       groupedExpenses.map((item) => [item.categoryId, Number(item._sum.amount || 0)])
     );
@@ -185,12 +167,12 @@ export async function summaryRoutes(app: FastifyInstance) {
       const spent = spentByCategoryMap.get(b.categoryId) || 0;
       const limit = Number(b.limitAmount);
       const percentageUsed = limit > 0 ? Number(((spent / limit) * 100).toFixed(2)) : 0;
-
       let status: 'OK' | 'WARNING' | 'EXCEEDED' = 'OK';
+
       if (percentageUsed >= 100) {
-        status = 'EXCEEDED'; // Estourado (> 100%)
+        status = 'EXCEEDED';
       } else if (percentageUsed >= 80) {
-        status = 'WARNING';  // Quase estourando (80% a 99%)
+        status = 'WARNING';
       }
 
       return {
@@ -205,7 +187,6 @@ export async function summaryRoutes(app: FastifyInstance) {
       };
     });
 
-    // 6. Resumo de Progresso das Metas
     const goalsReport = goals.map((g) => {
       const saved = Number(g.savedAmount);
       const target = Number(g.targetAmount);
@@ -220,7 +201,6 @@ export async function summaryRoutes(app: FastifyInstance) {
       };
     });
 
-    // 7. Retorno Consolidado para Relatório / Dashboard
     return reply.status(200).send({
       period: {
         month,
@@ -240,9 +220,7 @@ export async function summaryRoutes(app: FastifyInstance) {
       goals: goalsReport,
     });
   });
-  // ===========================================================================
-  // Rota GET /summary/export: Exportação de Extrato Mensal em CSV ou JSON
-  // ===========================================================================
+
   app.get('/summary/export', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
@@ -257,7 +235,6 @@ export async function summaryRoutes(app: FastifyInstance) {
     const startOfMonth = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
     const endOfMonth = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
 
-    // Busca transações completas do período com suas relações
     const transactions = await prisma.transaction.findMany({
       where: {
         userId,
@@ -275,7 +252,6 @@ export async function summaryRoutes(app: FastifyInstance) {
       orderBy: { date: 'asc' },
     });
 
-    // Se o usuário pedir formato JSON, devolve o array estruturado
     if (format === 'json') {
       reply.header(
         'Content-Disposition',
@@ -284,7 +260,6 @@ export async function summaryRoutes(app: FastifyInstance) {
       return reply.status(200).send(transactions);
     }
 
-    // Gerador dinâmico de CSV otimizado com cabeçalhos para planilhas
     const csvHeaders = [
       'Data',
       'Titulo',
@@ -301,7 +276,6 @@ export async function summaryRoutes(app: FastifyInstance) {
       const status = t.isPaid ? 'Pago' : 'Pendente';
       const valor = Number(t.amount).toFixed(2).replace('.', ',');
 
-      // Escapa aspas para evitar quebra de CSV caso o título tenha vírgulas
       return [
         dataFormatada,
         `"${t.title.replace(/"/g, '""')}"`,
@@ -315,14 +289,12 @@ export async function summaryRoutes(app: FastifyInstance) {
 
     const csvContent = [csvHeaders.join(';'), ...csvRows].join('\n');
 
-    // Headers HTTP que informam ao cliente para fazer download do arquivo CSV
     reply.header('Content-Type', 'text/csv; charset=utf-8');
     reply.header(
       'Content-Disposition',
       `attachment; filename="extrato-mywallet-${year}-${month.toString().padStart(2, '0')}.csv"`
     );
 
-    // BOM (Byte Order Mark) para garantir que o Excel reconheça acentos UTF-8
     return reply.status(200).send('\uFEFF' + csvContent);
   });
 }

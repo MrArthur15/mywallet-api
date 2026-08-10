@@ -6,38 +6,30 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// ==========================================
-// ENUMS (Tipagens estritas de segurança)
-// ==========================================
-
 enum AccountType {
-  CHECKING // Conta Corrente
-  SAVINGS  // Poupança
-  CASH     // Dinheiro físico / Carteira
-  OTHER    // Outros investimentos ou saldos
+  CHECKING
+  SAVINGS
+  CASH
+  OTHER
 }
 
 enum TransactionType {
-  INCOME   // Entrada (Receita)
-  OUTCOME  // Saída (Despesa)
-  TRANSFER // Transferência entre contas/metas
+  INCOME
+  OUTCOME
+  TRANSFER
 }
 
 enum InvoiceStatus {
-  OPEN     // Fatura aberta (em ciclo de compras)
-  CLOSED   // Fatura fechada (aguardando pagamento)
-  PAID     // Fatura paga
-  OVERDUE  // Fatura em atraso
+  OPEN
+  CLOSED
+  PAID
+  OVERDUE
 }
 
 enum LoanType {
-  I_OWE      // Eu devo dinheiro para alguém/instituição
-  OWED_TO_ME // Alguém me deve dinheiro
+  I_OWE
+  OWED_TO_ME
 }
-
-// ==========================================
-// ENTIDADES DO NÚCLEO (USUÁRIO E BANCOS)
-// ==========================================
 
 model User {
   id           String   @id @default(uuid())
@@ -47,7 +39,6 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  // Relacionamentos (Um para Muitos)
   accounts     Account[]
   creditCards  CreditCard[]
   categories   Category[]
@@ -61,9 +52,9 @@ model User {
 
 model Bank {
   id        String   @id @default(uuid())
-  name      String   @unique // Evita cadastrar "Nubank" duas vezes
-  color     String   // Ex: "#8A05BE" (Purple)
-  icon      String?  // Ícone ou Logo (URL/Slug)
+  name      String   @unique
+  color     String
+  icon      String?
   createdAt DateTime @default(now())
 
   accounts    Account[]
@@ -72,15 +63,11 @@ model Bank {
   @@map("banks")
 }
 
-// ==========================================
-// CONTAS CORRENTES E CARTÕES DE CRÉDITO
-// ==========================================
-
 model Account {
   id        String      @id @default(uuid())
   userId    String
   bankId    String
-  name      String      // Ex: "Conta Principal"
+  name      String
   balance   Decimal     @default(0.00) @db.Decimal(15, 2)
   type      AccountType @default(CHECKING)
   createdAt DateTime    @default(now())
@@ -90,7 +77,7 @@ model Account {
   bank         Bank          @relation(fields: [bankId], references: [id], onDelete: Restrict)
   transactions Transaction[]
 
-  @@unique([userId, name]) // Usuário não pode ter duas contas com nome idêntico
+  @@unique([userId, name])
   @@index([userId])
   @@map("accounts")
 }
@@ -99,10 +86,10 @@ model CreditCard {
   id         String   @id @default(uuid())
   userId     String
   bankId     String
-  name       String   // Ex: "Nubank Ultravioleta"
+  name       String
   limit      Decimal  @db.Decimal(15, 2)
-  closingDay Int      // Ex: 25
-  dueDay     Int      // Ex: 05
+  closingDay Int
+  dueDay     Int
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -118,10 +105,10 @@ model CreditCard {
 model Invoice {
   id           String        @id @default(uuid())
   creditCardId String
-  month        Int           // 1 a 12
-  year         Int           // Ex: 2026
-  closingDate  DateTime      // Data de fechamento real calculada
-  dueDate      DateTime      // Data de vencimento real calculada
+  month        Int
+  year         Int
+  closingDate  DateTime
+  dueDate      DateTime
   status       InvoiceStatus @default(OPEN)
   totalAmount  Decimal       @default(0.00) @db.Decimal(15, 2)
   createdAt    DateTime      @default(now())
@@ -130,20 +117,16 @@ model Invoice {
   creditCard   CreditCard    @relation(fields: [creditCardId], references: [id], onDelete: Cascade)
   transactions Transaction[]
 
-  @@unique([creditCardId, month, year]) // Impossível existir duas faturas para o mesmo mês/ano
+  @@unique([creditCardId, month, year])
   @@index([creditCardId, status])
   @@map("invoices")
 }
 
-// ==========================================
-// CATEGORIAS E SUBCATEGORIAS
-// ==========================================
-
 model Category {
   id        String   @id @default(uuid())
   userId    String
-  name      String   // Ex: "Lazer"
-  color     String   // Ex: "#9B51E0"
+  name      String
+  color     String
   icon      String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -153,7 +136,7 @@ model Category {
   transactions  Transaction[]
   budgets       Budget[]
 
-  @@unique([userId, name]) // Nome da categoria deve ser único para o usuário
+  @@unique([userId, name])
   @@index([userId])
   @@map("categories")
 }
@@ -161,7 +144,7 @@ model Category {
 model Subcategory {
   id         String   @id @default(uuid())
   categoryId String
-  name       String   // Ex: "Jogos Steam"
+  name       String
   createdAt  DateTime @default(now())
 
   category     Category      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
@@ -172,31 +155,22 @@ model Subcategory {
   @@map("subcategories")
 }
 
-// ==========================================
-// O MOTOR: TRANSAÇÕES FINANCEIRAS
-// ==========================================
-
 model Transaction {
   id            String          @id @default(uuid())
-  userId        String          // Facilita buscas globais sem JOINs pesados
-  accountId     String?         // Preenchido se foi pago via Conta/Débito/PIX
-  invoiceId     String?         // Preenchido se foi compra no Cartão de Crédito
+  userId        String
+  accountId     String?
+  invoiceId     String?
   categoryId    String
   subcategoryId String?
-  title         String          // Ex: "Stray na Steam", "Aluguel"
+  title         String
   amount        Decimal         @db.Decimal(15, 2)
   type          TransactionType
   date          DateTime
   isPaid        Boolean         @default(true)
-
-  // Recorrências (Contas fixas ou assinaturas mensais)
   isRecurring   Boolean         @default(false)
-
-  // Parcelamentos (Ex: 12x no cartão)
-  installmentGroup   String?    // UUID para agrupar todas as parcelas da mesma compra
-  currentInstallment Int?       // Ex: 1
-  totalInstallments  Int?       // Ex: 12
-
+  installmentGroup   String?
+  currentInstallment Int?
+  totalInstallments  Int?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
@@ -206,7 +180,6 @@ model Transaction {
   category    Category     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   subcategory Subcategory? @relation(fields: [subcategoryId], references: [id], onDelete: SetNull)
 
-  // Índices compostos de alta performance (o que mais filtramos no app)
   @@index([userId, date])
   @@index([userId, type])
   @@index([accountId])
@@ -214,14 +187,10 @@ model Transaction {
   @@map("transactions")
 }
 
-// ==========================================
-// METAS E COFRINHOS (GOALS)
-// ==========================================
-
 model Goal {
   id           String        @id @default(uuid())
   userId       String
-  title        String        // Ex: "Viagem SP 2027" ou "Fundo PC Gamer"
+  title        String
   targetAmount Decimal       @db.Decimal(15, 2)
   savedAmount  Decimal       @default(0.00) @db.Decimal(15, 2)
   deadline     DateTime?
@@ -249,36 +218,28 @@ model GoalDeposit {
   @@map("goal_deposits")
 }
 
-// ==========================================
-// TETOS E ORÇAMENTOS (BUDGETS)
-// ==========================================
-
 model Budget {
   id          String   @id @default(uuid())
   userId      String
   categoryId  String
-  limitAmount Decimal  @db.Decimal(15, 2) // Teto de gastos (Ex: 500.00)
-  month       Int      // 1 a 12
-  year        Int      // Ex: 2026
+  limitAmount Decimal  @db.Decimal(15, 2)
+  month       Int
+  year        Int
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, categoryId, month, year]) // Só existe 1 teto por categoria no mês/ano
+  @@unique([userId, categoryId, month, year])
   @@index([userId, month, year])
   @@map("budgets")
 }
 
-// ==========================================
-// CONTROLE DE EMPRÉSTIMOS
-// ==========================================
-
 model Loan {
   id               String   @id @default(uuid())
   userId           String
-  title            String   // Ex: "Empréstimo Notebook"
+  title            String
   totalAmount      Decimal  @db.Decimal(15, 2)
   remainingAmount  Decimal  @db.Decimal(15, 2)
   installmentValue Decimal? @db.Decimal(15, 2)

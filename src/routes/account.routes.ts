@@ -1,10 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { AccountType } from '@prisma/client'; // <-- 1. Importamos o Enum nativo do Prisma
+import { AccountType } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 
 export async function accountRoutes(app: FastifyInstance) {
-  // Exige Token JWT válido em todas as rotas deste arquivo
   app.addHook('onRequest', async (request, reply) => {
     try {
       await request.jwtVerify();
@@ -13,13 +12,9 @@ export async function accountRoutes(app: FastifyInstance) {
     }
   });
 
-  // ===========================================================================
-  // Rota POST: Cria uma nova conta bancária ou carteira para o usuário logado
-  // ===========================================================================
   app.post('/accounts', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
-    // 1. Como bankId é obrigatório no seu banco, removemos o .optional() aqui:
     const createAccountSchema = z.object({
       name: z.string().min(2, { message: 'O nome da conta deve ter pelo menos 2 caracteres' }),
       balance: z.number().default(0),
@@ -45,7 +40,7 @@ export async function accountRoutes(app: FastifyInstance) {
           name,
           balance,
           type,
-          bankId, // <-- 2. Passamos direto, pois é garantido que existe
+          bankId,
         },
       });
 
@@ -56,34 +51,22 @@ export async function accountRoutes(app: FastifyInstance) {
     }
   });
 
-  // ===========================================================================
-  // Rota GET: Lista todas as contas do usuário logado
-  // ===========================================================================
   app.get('/accounts', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
     const accounts = await prisma.account.findMany({
-      where: {
-        userId,
-      },
+      where: { userId },
       include: {
         bank: {
-          select: {
-            name: true,
-            color: true,
-          },
+          select: { name: true, color: true },
         },
       },
-      orderBy: {
-        name: 'asc',
-      },
+      orderBy: { name: 'asc' },
     });
 
     return reply.status(200).send(accounts);
   });
-  // ===========================================================================
-  // Rota DELETE: Exclui conta apenas se não possuir movimentações atreladas
-  // ===========================================================================
+
   app.delete('/accounts/:id', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
@@ -114,6 +97,7 @@ export async function accountRoutes(app: FastifyInstance) {
     }
 
     await prisma.account.delete({ where: { id } });
+
     return reply.status(204).send();
   });
 }

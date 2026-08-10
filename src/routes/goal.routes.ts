@@ -7,9 +7,6 @@ export async function goalRoutes(app: FastifyInstance) {
     await request.jwtVerify();
   });
 
-  // ===========================================================================
-  // Rota POST: Cria uma nova meta financeira
-  // ===========================================================================
   app.post('/goals', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
@@ -24,9 +21,9 @@ export async function goalRoutes(app: FastifyInstance) {
     const goal = await prisma.goal.create({
       data: {
         userId,
-        title,              // <-- Alinhado com o schema (title)
+        title,
         targetAmount,
-        savedAmount: 0,     // <-- Alinhado com o schema (savedAmount)
+        savedAmount: 0,
         deadline: deadline || undefined,
       },
     });
@@ -34,21 +31,17 @@ export async function goalRoutes(app: FastifyInstance) {
     return reply.status(201).send(goal);
   });
 
-  // ===========================================================================
-  // Rota GET: Lista metas do usuário com porcentagem de progresso calculada
-  // ===========================================================================
   app.get('/goals', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
     const goals = await prisma.goal.findMany({
       where: { userId },
       include: {
-        deposits: true,     // <-- Inclui o histórico de aportes (GoalDeposit)
+        deposits: true,
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    // Calcula dinamicamente a porcentagem atingida de cada meta
     const goalsWithProgress = goals.map((goal) => {
       const current = Number(goal.savedAmount);
       const target = Number(goal.targetAmount);
@@ -63,9 +56,6 @@ export async function goalRoutes(app: FastifyInstance) {
     return reply.status(200).send(goalsWithProgress);
   });
 
-  // ===========================================================================
-  // Rota POST: Aportar dinheiro na meta (Debita da Conta -> Soma na Meta)
-  // ===========================================================================
   app.post('/goals/:id/deposit', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
@@ -91,15 +81,12 @@ export async function goalRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Saldo insuficiente na conta bancária para este aporte.' });
     }
 
-    // Transação ACID: Deduz da conta, cria o registro de auditoria e adiciona em savedAmount
     const updatedGoal = await prisma.$transaction(async (tx) => {
-      // 1. Deduz da conta corrente
       await tx.account.update({
         where: { id: accountId },
         data: { balance: { decrement: amount } },
       });
 
-      // 2. Registra o aporte no histórico de auditoria (GoalDeposit)
       await tx.goalDeposit.create({
         data: {
           goalId: id,
@@ -107,7 +94,6 @@ export async function goalRoutes(app: FastifyInstance) {
         },
       });
 
-      // 3. Atualiza o saldo acumulado da meta
       return tx.goal.update({
         where: { id },
         data: {
@@ -115,12 +101,10 @@ export async function goalRoutes(app: FastifyInstance) {
         },
       });
     });
+
     return reply.status(200).send(updatedGoal);
   });
 
-  // ===========================================================================
-  // Rota POST: Resgatar dinheiro da meta (Deduz da Meta -> Devolve para a Conta)
-  // ===========================================================================
   app.post('/goals/:id/withdraw', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
@@ -155,7 +139,7 @@ export async function goalRoutes(app: FastifyInstance) {
       return tx.goal.update({
         where: { id },
         data: {
-          savedAmount: { decrement: amount }, // <-- Usando savedAmount
+          savedAmount: { decrement: amount },
         },
       });
     });
@@ -163,9 +147,6 @@ export async function goalRoutes(app: FastifyInstance) {
     return reply.status(200).send(updatedGoal);
   });
 
-  // ===========================================================================
-  // Rota DELETE: Remove uma meta
-  // ===========================================================================
   app.delete('/goals/:id', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
@@ -182,6 +163,7 @@ export async function goalRoutes(app: FastifyInstance) {
     }
 
     await prisma.goal.delete({ where: { id } });
+
     return reply.status(204).send();
   });
 }

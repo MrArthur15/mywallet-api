@@ -5,7 +5,6 @@ import jwt from '@fastify/jwt';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import { errorHandler } from './error-handler.js';
-
 import { userRoutes } from './routes/user.routes.js';
 import { transactionRoutes } from './routes/transaction.routes.js';
 import { accountRoutes } from './routes/account.routes.js';
@@ -18,14 +17,12 @@ import { goalRoutes } from './routes/goal.routes.js';
 import { budgetRoutes } from './routes/budget.routes.js';
 
 const app = fastify({ logger: true });
-
 app.setErrorHandler(errorHandler);
 
 app.get('/ping', async () => {
   return { status: 'ok', message: 'MyWallet API v2 rodando 100%!' };
 });
 
-// Redireciona a URL raiz diretamente para a documentação Swagger
 app.get('/', async (request, reply) => {
   return reply.redirect('/docs');
 });
@@ -33,12 +30,10 @@ app.get('/', async (request, reply) => {
 const start = async () => {
   try {
     await app.register(cors, { origin: true });
-
     await app.register(jwt, {
       secret: process.env.JWT_SECRET || 'mywallet-super-secret-key-2026',
     });
 
-    // 1. Configuração do OpenAPI / Swagger
     await app.register(swagger, {
       openapi: {
         info: {
@@ -58,12 +53,10 @@ const start = async () => {
       },
     });
 
-    // 2. Interface Visual no navegador em /docs
     await app.register(swaggerUi, {
       routePrefix: '/docs',
     });
 
-    // Registro das Rotas do Sistema
     await app.register(userRoutes);
     await app.register(transactionRoutes);
     await app.register(accountRoutes);
@@ -77,8 +70,8 @@ const start = async () => {
 
     const port = Number(process.env.PORT) || 3333;
     await app.listen({ port, host: '0.0.0.0' });
-    console.log(`🚀 Servidor rodando em http://localhost:${port}`);
-    console.log(`📖 Documentação Swagger disponível em http://localhost:${port}/docs`);
+    console.log(`Servidor rodando em http://localhost:${port}`);
+    console.log(`Documentação Swagger disponível em http://localhost:${port}/docs`);
   } catch (err) {
     app.log.error(err);
     process.exit(1);

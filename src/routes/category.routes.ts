@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { string, z } from 'zod';
+import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 
 export async function categoryRoutes(app: FastifyInstance) {
@@ -7,16 +7,13 @@ export async function categoryRoutes(app: FastifyInstance) {
     await request.jwtVerify();
   });
 
-  // ===========================================================================
-  // CATEGORIAS PAI (CRUD + Proteção de Integridade)
-  // ===========================================================================
   app.post('/categories', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
     const createCategorySchema = z.object({
       name: z.string().min(2, { message: 'O nome deve ter pelo menos 2 caracteres' }),
       icon: z.string().optional(),
-      color: z.string().min(4, { message: 'A cor é obrigatória' }), 
+      color: z.string().min(4, { message: 'A cor é obrigatória' }),
     });
 
     const { name, icon, color } = createCategorySchema.parse(request.body);
@@ -26,7 +23,7 @@ export async function categoryRoutes(app: FastifyInstance) {
         userId,
         name,
         icon,
-        color, 
+        color,
       },
     });
 
@@ -79,12 +76,10 @@ export async function categoryRoutes(app: FastifyInstance) {
     }
 
     await prisma.category.delete({ where: { id } });
+
     return reply.status(204).send();
   });
 
-  // ===========================================================================
-  // SUBCATEGORIAS (Criação aninhada e Deleção)
-  // ===========================================================================
   app.post('/categories/:categoryId/subcategories', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
@@ -99,7 +94,6 @@ export async function categoryRoutes(app: FastifyInstance) {
     const { categoryId } = paramsSchema.parse(request.params);
     const { name } = bodySchema.parse(request.body);
 
-    // Garante que a categoria pai pertence ao usuário logado
     const parentCategory = await prisma.category.findFirst({
       where: { id: categoryId, userId },
     });
@@ -108,7 +102,6 @@ export async function categoryRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Categoria pai não encontrada.' });
     }
 
-    // Removido o userId direto, pois o relacionamento é feito via categoryId
     const subcategory = await prisma.subcategory.create({
       data: {
         categoryId,
@@ -128,7 +121,6 @@ export async function categoryRoutes(app: FastifyInstance) {
 
     const { id } = paramsSchema.parse(request.params);
 
-    // Valida se a subsubcategory pertence a uma categoria do usuário logado
     const subcategory = await prisma.subcategory.findFirst({
       where: {
         id,
@@ -143,6 +135,7 @@ export async function categoryRoutes(app: FastifyInstance) {
     }
 
     await prisma.subcategory.delete({ where: { id } });
+
     return reply.status(204).send();
   });
 }

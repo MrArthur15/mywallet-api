@@ -5,14 +5,10 @@ import { prisma } from '../lib/prisma.js';
 import { calculateInvoiceDates } from './invoice.routes.js';
 
 export async function transactionRoutes(app: FastifyInstance) {
-  // Hook de segurança: exige Token JWT em todas as rotas
   app.addHook('onRequest', async (request, reply) => {
     await request.jwtVerify();
   });
 
-  // ===========================================================================
-  // Rota POST: Cria transação (À vista, Parcelada OU Recorrente/Assinatura)
-  // ===========================================================================
   app.post('/transactions', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
@@ -27,7 +23,7 @@ export async function transactionRoutes(app: FastifyInstance) {
         creditCardId: z.string().uuid().optional(),
         installments: z.number().int().min(1).max(72).default(1),
         isRecurring: z.boolean().default(false),
-        recurrenceMonths: z.number().int().min(2).max(36).default(12), // Projeta 12 meses por padrão
+        recurrenceMonths: z.number().int().min(2).max(36).default(12),
       })
       .refine(
         (data) => (data.accountId && !data.creditCardId) || (!data.accountId && data.creditCardId),
@@ -55,9 +51,6 @@ export async function transactionRoutes(app: FastifyInstance) {
       recurrenceMonths,
     } = createTransactionSchema.parse(request.body);
 
-    // -------------------------------------------------------------------------
-    // CASO A: Transação em Conta Bancária (Débito / Pix / Aluguel / Luz)
-    // -------------------------------------------------------------------------
     if (accountId) {
       const account = await prisma.account.findFirst({
         where: { id: accountId, userId },
@@ -67,7 +60,6 @@ export async function transactionRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: 'Conta bancária não encontrada.' });
       }
 
-      // SUB-CASO A1: Gasto Fixo Recorrente em Conta Corrente (Ex: Aluguel por 12 meses)
       if (isRecurring) {
         const createdTransactions = await prisma.$transaction(async (tx) => {
           const results = [];
@@ -76,8 +68,6 @@ export async function transactionRoutes(app: FastifyInstance) {
             const occurrenceDate = new Date(date);
             occurrenceDate.setUTCMonth(occurrenceDate.getUTCMonth() + i);
 
-            // Só o mês atual (i === 0) nasce pago e altera o saldo da conta.
-            // Os meses futuros nascem como pendentes (isPaid: false) para não negativar a conta hoje.
             const isFirstMonth = i === 0;
 
             const created = await tx.transaction.create({
@@ -111,7 +101,6 @@ export async function transactionRoutes(app: FastifyInstance) {
         return reply.status(201).send(createdTransactions);
       }
 
-      // SUB-CASO A2: Gasto normal / à vista em Conta Corrente
       const transaction = await prisma.$transaction(async (tx) => {
         const created = await tx.transaction.create({
           data: {
@@ -138,9 +127,6 @@ export async function transactionRoutes(app: FastifyInstance) {
       return reply.status(201).send(transaction);
     }
 
-    // -------------------------------------------------------------------------
-    // CASO B: Transação em Cartão de Crédito (À vista, Parcelada OU Assinatura)
-    // -------------------------------------------------------------------------
     if (creditCardId) {
       const card = await prisma.creditCard.findFirst({
         where: { id: creditCardId, userId },
@@ -154,7 +140,7 @@ export async function transactionRoutes(app: FastifyInstance) {
       const installmentGroupId = installments > 1 ? randomUUID() : undefined;
       const occurrenceAmount = installments > 1
         ? Number((amount / installments).toFixed(2))
-        : amount; // Na assinatura, o valor é integral todo mês!
+        : amount;
 
       const createdTransactions = await prisma.$transaction(async (tx) => {
         const resultTransactions = [];
@@ -217,7 +203,6 @@ export async function transactionRoutes(app: FastifyInstance) {
             },
           });
 
-          // Incrementa o total da fatura em tempo real via ACID
           await tx.invoice.update({
             where: { id: invoice.id },
             data: { totalAmount: { increment: occurrenceAmount } },
@@ -235,9 +220,6 @@ export async function transactionRoutes(app: FastifyInstance) {
     }
   });
 
-  // ===========================================================================
-  // Rota PATCH: Baixa/Pagar uma transação pendente em Conta Corrente
-  // ===========================================================================
   app.patch('/transactions/:id/pay', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
@@ -265,11 +247,8 @@ export async function transactionRoutes(app: FastifyInstance) {
       });
     }
 
-    // 1. Isolamos o ID em uma constante local. Como passou pelo if (!transaction.accountId) acima,
-    // o TypeScript garante 100% que accountId aqui é do tipo "string" pura (nunca null).
     const accountId = transaction.accountId;
 
-    // Transação ACID: Marca como paga e deduz do saldo da conta agora!
     const updated = await prisma.$transaction(async (tx) => {
       const balanceChange =
         transaction.type === 'INCOME'
@@ -277,7 +256,7 @@ export async function transactionRoutes(app: FastifyInstance) {
           : -Number(transaction.amount);
 
       await tx.account.update({
-        where: { id: accountId }, // <-- Usamos a constante segura aqui sem erro!
+        where: { id: accountId },
         data: { balance: { increment: balanceChange } },
       });
 
@@ -289,9 +268,7 @@ export async function transactionRoutes(app: FastifyInstance) {
 
     return reply.status(200).send(updated);
   });
-  // ===========================================================================
-  // Rota GET: Lista transações com Paginação e Filtros Avançados
-  // ===========================================================================
+
   app.get('/transactions', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
@@ -304,7 +281,7 @@ export async function transactionRoutes(app: FastifyInstance) {
       accountId: z.string().uuid().optional(),
       creditCardId: z.string().uuid().optional(),
       categoryId: z.string().uuid().optional(),
-      query: z.string().optional(), // Busca textual pelo título
+      query: z.string().optional(),
     });
 
     const {
@@ -331,7 +308,6 @@ export async function transactionRoutes(app: FastifyInstance) {
       };
     }
 
-    // Filtro por Período (mês e ano em UTC)
     if (month && year) {
       const startDate = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
       const endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
@@ -385,9 +361,6 @@ export async function transactionRoutes(app: FastifyInstance) {
     });
   });
 
-  // ===========================================================================
-  // Rota DELETE: Exclui uma transação e REVERTE o saldo (Conta ou Fatura)
-  // ===========================================================================
   app.delete('/transactions/:id', async (request, reply) => {
     const userId = (request.user as { sub: string }).sub;
 
@@ -405,9 +378,7 @@ export async function transactionRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Transação não encontrada.' });
     }
 
-    // Executa a reversão dentro de uma transação ACID
     await prisma.$transaction(async (tx) => {
-      // CASO A: Se era de Conta Bancária E já estava PAGA (isPaid: true), desfaz o saldo
       if (transaction.accountId && transaction.isPaid) {
         const reversalAmount =
           transaction.type === 'OUTCOME'
@@ -424,7 +395,6 @@ export async function transactionRoutes(app: FastifyInstance) {
         });
       }
 
-      // CASO B: Se estava atrelada a uma Fatura de Cartão, reduz o total da fatura
       if (transaction.invoiceId) {
         await tx.invoice.update({
           where: { id: transaction.invoiceId },
@@ -436,7 +406,6 @@ export async function transactionRoutes(app: FastifyInstance) {
         });
       }
 
-      // Apaga o registro da transação
       await tx.transaction.delete({
         where: { id },
       });
