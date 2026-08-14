@@ -19,9 +19,27 @@ import { budgetRoutes } from './routes/budget.routes.js';
 const app = fastify({ logger: true });
 app.setErrorHandler(errorHandler);
 
-app.get('/ping', async () => {
-  return { status: 'ok', message: 'MyWallet API v2 rodando 100%!' };
-});
+app.get(
+  '/ping',
+  {
+    schema: {
+      tags: ['Health Check'],
+      summary: 'Verificar status da API',
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            status: { type: 'string' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  },
+  async () => {
+    return { status: 'ok', message: 'MyWallet API v2 rodando 100%!' };
+  }
+);
 
 app.get('/', async (request, reply) => {
   return reply.redirect('/docs');
@@ -30,6 +48,7 @@ app.get('/', async (request, reply) => {
 const start = async () => {
   try {
     await app.register(cors, { origin: true });
+    
     await app.register(jwt, {
       secret: process.env.JWT_SECRET || 'mywallet-super-secret-key-2026',
     });
@@ -41,6 +60,13 @@ const start = async () => {
           description: 'Backend corporativo para gestão financeira pessoal, cartões e metas.',
           version: '2.0.0',
         },
+        tags: [
+          { name: 'Auth', description: 'Autenticação e usuários' },
+          { name: 'Transactions', description: 'Gestão de fluxo de caixa' },
+          { name: 'Invoices', description: 'Cartões de crédito e faturas' },
+          { name: 'Summary', description: 'Dashboards e relatórios' },
+          { name: 'Health Check', description: 'Status do sistema' }
+        ],
         components: {
           securitySchemes: {
             bearerAuth: {
@@ -70,6 +96,7 @@ const start = async () => {
 
     const port = Number(process.env.PORT) || 3333;
     await app.listen({ port, host: '0.0.0.0' });
+    
     console.log(`Servidor rodando em http://localhost:${port}`);
     console.log(`Documentação Swagger disponível em http://localhost:${port}/docs`);
   } catch (err) {
