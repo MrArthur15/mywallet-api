@@ -16,7 +16,15 @@ import { invoiceRoutes } from './routes/invoice.routes.js';
 import { goalRoutes } from './routes/goal.routes.js';
 import { budgetRoutes } from './routes/budget.routes.js';
 
-const app = fastify({ logger: true });
+const app = fastify({
+  logger: true,
+  ajv: {
+    customOptions: {
+      keywords: ['example'],
+    },
+  },
+});
+
 app.setErrorHandler(errorHandler);
 
 app.get(
