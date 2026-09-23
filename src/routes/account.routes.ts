@@ -23,9 +23,9 @@ export async function accountRoutes(app: FastifyInstance) {
           type: 'object',
           required: ['name', 'bankId'],
           properties: {
-            name: { type: 'string', example: 'Conta Corrente Principal' },
-            balance: { type: 'number', example: 1500.00 },
-            type: { type: 'string', enum: ['CHECKING', 'SAVINGS', 'CASH', 'OTHER'], example: 'CHECKING' },
+            name: { type: 'string', examples: 'Conta Corrente Principal' },
+            balance: { type: 'number', examples: 1500.00 },
+            type: { type: 'string', enum: ['CHECKING', 'SAVINGS', 'CASH', 'OTHER'], examples: 'CHECKING' },
             bankId: { type: 'string', format: 'uuid' },
           },
         },

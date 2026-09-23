@@ -37,6 +37,13 @@ export async function summaryRoutes(app: FastifyInstance) {
                 items: {
                   type: 'object',
                   additionalProperties: true
+                },
+              },
+              goals: { 
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: true
                 }
               },
             },
@@ -73,6 +80,7 @@ export async function summaryRoutes(app: FastifyInstance) {
         },
         expensesByCategory: [],
         budgets: [],
+        goals: [],
       });
     }
   );
