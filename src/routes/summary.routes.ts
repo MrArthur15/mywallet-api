@@ -17,9 +17,28 @@ export async function summaryRoutes(app: FastifyInstance) {
           200: {
             type: 'object',
             properties: {
-              netWorth: { type: 'number' },
-              totalIncomes: { type: 'number' },
-              totalExpenses: { type: 'number' },
+              overview: {
+                type: 'object',
+                properties: {
+                  netWorth: { type: 'number' },
+                  totalIncomes: { type: 'number' },
+                  totalExpenses: { type: 'number' },
+                },
+              },
+              expensesByCategory: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: true
+                }
+              },
+              budgets: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: true
+                }
+              },
             },
           },
         },
@@ -47,9 +66,13 @@ export async function summaryRoutes(app: FastifyInstance) {
         .reduce((acc, t) => acc + t.amount.toNumber(), 0);
 
       return reply.status(200).send({
-        netWorth,
-        totalIncomes,
-        totalExpenses,
+        overview: {
+          netWorth,
+          totalIncomes,
+          totalExpenses,
+        },
+        expensesByCategory: [],
+        budgets: [],
       });
     }
   );
@@ -85,7 +108,7 @@ export async function summaryRoutes(app: FastifyInstance) {
 
       reply.header('Content-Type', 'text/csv; charset=utf-8');
       reply.header('Content-Disposition', 'attachment; filename="extrato.csv"');
-      
+
       return reply.send(csvContent);
     }
   );
